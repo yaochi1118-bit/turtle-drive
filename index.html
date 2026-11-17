@@ -124,7 +124,7 @@ const LANE_W = ROAD_W / LANES;
 const laneCenters = [];
 for (let i = 0; i < LANES; i++) laneCenters.push(ROAD_X + (i + 0.5) * LANE_W);
 
-let state = 'start';       // start | playing | gameOver
+let state = 'start';       // start | playing | crash | gameOver
 let dist = 0;              // km
 let coins = 0;
 let speed = 3.6;
@@ -134,6 +134,7 @@ let frame = 0;
 let spawnTimer = 0;
 let coinTimer = 0;
 let lastKmSound = 0;
+let crashTimer = 0;
 let playerLane = 1;
 let playerX = laneCenters[1];
 const playerY = H - 135;
@@ -326,6 +327,13 @@ function drawCoin(c) {
 }
 
 function update() {
+  if (state === 'crash') {
+    crashTimer++;
+    if (crashTimer > 60) { // 停留约 1 秒后弹出结束界面
+      state = 'gameOver';
+    }
+    return;
+  }
   if (state !== 'playing') return;
   frame++;
   const targetX = laneCenters[playerLane];
@@ -368,7 +376,8 @@ function update() {
   for (const o of obstacles) {
     if (px < o.x + o.w && px + pw > o.x && py < o.y + o.h && py + ph > o.y) {
       play('crash');
-      state = 'gameOver';
+      state = 'crash';
+      crashTimer = 0;
       if (dist > highScore) { highScore = dist; localStorage.setItem('turtle_race_high', highScore.toFixed(2)); }
       return;
     }
@@ -382,6 +391,18 @@ function draw() {
   drawCar(playerX, playerY);
   document.getElementById('dist').textContent = dist.toFixed(2);
   document.getElementById('coins').textContent = coins;
+
+  if (state === 'crash') {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💥 撞车了', W / 2, H / 2 - 10);
+    ctx.font = '18px sans-serif';
+    ctx.fillText('稍后显示成绩…', W / 2, H / 2 + 24);
+  }
 }
 
 const uiStart = document.getElementById('uiStart');
@@ -392,7 +413,7 @@ function renderUI() {
     uiStart.classList.remove('hidden');
     uiHud.classList.add('hidden');
     uiOver.classList.add('hidden');
-  } else if (state === 'playing') {
+  } else if (state === 'playing' || state === 'crash') {
     uiStart.classList.add('hidden');
     uiHud.classList.remove('hidden');
     uiOver.classList.add('hidden');
