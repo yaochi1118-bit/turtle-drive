@@ -129,7 +129,7 @@ let dist = 0;              // km
 let coins = 0;
 let speed = 3.6;
 let difficulty = 'normal'; // slow | normal | fast
-const baseSpeed = { slow: 2.6, normal: 3.6, fast: 5.0 };
+const baseSpeed = { slow: 1.8, normal: 2.6, fast: 3.6 };
 let frame = 0;
 let spawnTimer = 0;
 let coinTimer = 0;
@@ -331,8 +331,8 @@ function update() {
   const targetX = laneCenters[playerLane];
   playerX += (targetX - playerX) * 0.24;
 
-  speed = baseSpeed[difficulty] + dist * 0.14;
-  if (speed > (difficulty === 'slow' ? 6.5 : difficulty === 'normal' ? 9.5 : 12.5)) speed = difficulty === 'slow' ? 6.5 : difficulty === 'normal' ? 9.5 : 12.5;
+  speed = baseSpeed[difficulty] + dist * 0.08;
+  if (speed > (difficulty === 'slow' ? 4.5 : difficulty === 'normal' ? 6.5 : 8.5)) speed = difficulty === 'slow' ? 4.5 : difficulty === 'normal' ? 6.5 : 8.5;
 
   dist += speed * 0.0005;
   const kmMark = Math.floor(dist);
