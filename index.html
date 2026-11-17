@@ -54,6 +54,13 @@
     cursor: pointer; box-shadow: 0 4px 0 #2e7d32; transform: translateY(0);
   }
   button:active { transform: translateY(4px); box-shadow: none; }
+  .diff {
+    display: flex; gap: 10px; margin-bottom: 26px;
+  }
+  .diff button {
+    font-size: 15px; padding: 8px 20px; background: #81c784; box-shadow: 0 3px 0 #2e7d32;
+  }
+  .diff button.active { background: #43a047; box-shadow: 0 3px 0 #1b5e20; }
   .hud {
     position: absolute; top: 12px; left: 0; right: 0;
     display: flex; justify-content: space-between; padding: 0 24px;
@@ -81,6 +88,11 @@
     <h1>🐢 乌龟开车</h1>
     <p>躲避障碍物 · 拾取金币 · 行驶更多公里</p>
     <div class="hint">← → / A / D 换车道 &nbsp;·&nbsp; 点击左右半屏换车道</div>
+    <div class="diff">
+      <button id="diffSlow" class="active">慢速</button>
+      <button id="diffNormal">普通</button>
+      <button id="diffFast">快速</button>
+    </div>
     <button id="btnStart">开始游戏</button>
   </div>
 
@@ -116,6 +128,8 @@ let state = 'start';       // start | playing | gameOver
 let dist = 0;              // km
 let coins = 0;
 let speed = 3.6;
+let difficulty = 'normal'; // slow | normal | fast
+const baseSpeed = { slow: 2.6, normal: 3.6, fast: 5.0 };
 let frame = 0;
 let spawnTimer = 0;
 let coinTimer = 0;
@@ -177,7 +191,7 @@ function spawnCoin() {
 }
 
 function reset() {
-  dist = 0; coins = 0; speed = 3.6; frame = 0; spawnTimer = 0; coinTimer = 0;
+  dist = 0; coins = 0; speed = baseSpeed[difficulty]; frame = 0; spawnTimer = 0; coinTimer = 0;
   lastKmSound = 0;
   playerLane = 1; playerX = laneCenters[1];
   obstacles = []; coinList = [];
@@ -317,8 +331,8 @@ function update() {
   const targetX = laneCenters[playerLane];
   playerX += (targetX - playerX) * 0.24;
 
-  speed = 3.6 + dist * 0.14;
-  if (speed > 9.5) speed = 9.5;
+  speed = baseSpeed[difficulty] + dist * 0.14;
+  if (speed > (difficulty === 'slow' ? 6.5 : difficulty === 'normal' ? 9.5 : 12.5)) speed = difficulty === 'slow' ? 6.5 : difficulty === 'normal' ? 9.5 : 12.5;
 
   dist += speed * 0.0005;
   const kmMark = Math.floor(dist);
@@ -393,6 +407,14 @@ function renderUI() {
 }
 
 document.getElementById('btnStart').addEventListener('click', () => { state = 'playing'; });
+['diffSlow','diffNormal','diffFast'].forEach(id => {
+  document.getElementById(id).addEventListener('click', () => {
+    document.querySelectorAll('.diff button').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    difficulty = id === 'diffSlow' ? 'slow' : id === 'diffNormal' ? 'normal' : 'fast';
+    speed = baseSpeed[difficulty];
+  });
+});
 document.getElementById('btnRestart').addEventListener('click', () => { reset(); state = 'playing'; });
 document.getElementById('btnMute').addEventListener('click', () => {
   soundOn = !soundOn;
