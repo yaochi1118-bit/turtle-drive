@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🐢 乌龟开车 — 避障拾金币</title>
+<meta name="description" content="乌龟开车躲避障碍物，拾取金币，行驶更多公里。微信点开即玩的网页小游戏。">
+<meta name="theme-color" content="#43a047">
+<meta property="og:title" content="🐢 乌龟开车 — 避障拾金币">
+<meta property="og:description" content="躲避障碍物 · 拾取金币 · 行驶更多公里。微信点开即玩的网页小游戏。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="REPLACE_WITH_YOUR_LINK">
+<meta property="og:image" content="og-image.svg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="zh_CN">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #e8f5e9;
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wrap {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #c8e6c9;
+    box-shadow: 0 0 24px rgba(0,0,0,0.15);
+    max-width: 100%; max-height: 100%;
+  }
+  .screen {
+    position: absolute; inset: 0;
+    background: rgba(232, 245, 233, 0.94);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    z-index: 10;
+  }
+  .screen.hidden { display: none !important; }
+  h1 { font-size: 44px; margin: 0 0 8px; color: #2e7d32; letter-spacing: 2px; text-shadow: 0 2px 0 rgba(255,255,255,0.7); }
+  h2 { font-size: 38px; margin: 0 0 10px; color: #c62828; }
+  p { color: #1b5e20; margin: 0 0 16px; font-size: 17px; }
+  .hint { color: #558b2f; font-size: 14px; margin-bottom: 26px; line-height: 1.7; }
+  button {
+    font-family: inherit; font-size: 19px; padding: 13px 38px;
+    border: none; border-radius: 10px; background: #43a047; color: #fff;
+    cursor: pointer; box-shadow: 0 4px 0 #2e7d32; transform: translateY(0);
+  }
+  button:active { transform: translateY(4px); box-shadow: none; }
+  .hud {
+    position: absolute; top: 12px; left: 0; right: 0;
+    display: flex; justify-content: space-between; padding: 0 24px;
+    z-index: 5; pointer-events: none;
+  }
+  .hud > div {
+    background: rgba(255,255,255,0.9); border-radius: 10px; padding: 7px 18px;
+    font-size: 19px; font-weight: 800; color: #1b5e20; pointer-events: auto;
+  }
+  .stats { display: flex; gap: 34px; margin-top: 12px; font-size: 17px; color: #2e7d32; }
+  .stats b { display: block; font-size: 26px; color: #c62828; margin-top: 2px; }
+  #btnMute {
+    position: absolute; top: 12px; right: 12px; z-index: 6;
+    font-size: 20px; padding: 7px 14px; border-radius: 8px; border: none;
+    background: #43a047; color: #fff; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="gameCanvas" width="400" height="700"></canvas>
+  <button id="btnMute">🔊</button>
+
+  <div id="uiStart" class="screen">
+    <h1>🐢 乌龟开车</h1>
+    <p>躲避障碍物 · 拾取金币 · 行驶更多公里</p>
+    <div class="hint">← → / A / D 换车道 &nbsp;·&nbsp; 点击左右半屏换车道</div>
+    <button id="btnStart">开始游戏</button>
+  </div>
+
+  <div id="uiHud" class="hud hidden">
+    <div>🛣️ <span id="dist">0.00</span> km</div>
+    <div>🪙 <span id="coins">0</span></div>
+  </div>
+
+  <div id="uiGameOver" class="screen hidden">
+    <h2>撞车了！</h2>
+    <div class="stats">
+      <div>行驶 <b id="finalDist">0.00</b> km</div>
+      <div>金币 <b id="finalCoins">0</b></div>
+      <div>最高 <b id="highDist">0.00</b> km</div>
+    </div>
+    <button id="btnRestart">再玩一次</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = 400, H = 700;
+canvas.width = W; canvas.height = H;
+
+const ROAD_W = 240;
+const ROAD_X = (W - ROAD_W) / 2;
+const LANES = 3;
+const LANE_W = ROAD_W / LANES;
+const laneCenters = [];
+for (let i = 0; i < LANES; i++) laneCenters.push(ROAD_X + (i + 0.5) * LANE_W);
+
+let state = 'start';       // start | playing | gameOver
+let dist = 0;              // km
+let coins = 0;
+let speed = 3.6;
+let frame = 0;
+let spawnTimer = 0;
+let coinTimer = 0;
+let lastKmSound = 0;
+let playerLane = 1;
+let playerX = laneCenters[1];
+const playerY = H - 135;
+let obstacles = [];
+let coinList = [];
+let highScore = parseFloat(localStorage.getItem('turtle_race_high') || '0') || 0;
+let soundOn = true;
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function play(kind) {
+  if (!soundOn) return;
+  ensureAudio();
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  if (kind === 'coin') {
+    o.type = 'sine';
+    o.frequency.setValueAtTime(900, t);
+    o.frequency.exponentialRampToValueAtTime(1500, t + 0.12);
+    g.gain.setValueAtTime(0.13, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    o.start(t); o.stop(t + 0.16);
+  } else if (kind === 'crash') {
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(160, t);
+    o.frequency.exponentialRampToValueAtTime(35, t + 0.35);
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.linearRampToValueAtTime(0.001, t + 0.35);
+    o.start(t); o.stop(t + 0.35);
+  } else if (kind === 'km') {
+    o.type = 'sine';
+    o.frequency.setValueAtTime(1200, t);
+    g.gain.setValueAtTime(0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    o.start(t); o.stop(t + 0.12);
+  }
+}
+
+function spawnObstacle() {
+  const lane = Math.floor(Math.random() * LANES);
+  const types = ['cone', 'rock', 'barrier'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const w = type === 'barrier' ? 66 : 46;
+  const h = type === 'barrier' ? 30 : 58;
+  obstacles.push({ x: laneCenters[lane] - w / 2, y: -h - 12, w, h, lane, type });
+}
+function spawnCoin() {
+  const lane = Math.floor(Math.random() * LANES);
+  coinList.push({ x: laneCenters[lane], y: -24, r: 11, lane });
+}
+
+function reset() {
+  dist = 0; coins = 0; speed = 3.6; frame = 0; spawnTimer = 0; coinTimer = 0;
+  lastKmSound = 0;
+  playerLane = 1; playerX = laneCenters[1];
+  obstacles = []; coinList = [];
+}
+
+function changeLane(dir) {
+  if (state !== 'playing') return;
+  let nl = playerLane + dir;
+  if (nl < 0) nl = 0;
+  if (nl > LANES - 1) nl = LANES - 1;
+  playerLane = nl;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') changeLane(-1);
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') changeLane(1);
+  if (e.key === ' ' || e.key === 'Enter') {
+    if (state === 'start') state = 'playing';
+    else if (state === 'gameOver') { reset(); state = 'playing'; }
+  }
+});
+
+canvas.addEventListener('mousedown', onPointer);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); onPointer(e); }, { passive: false });
+function onPointer(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+  const cx = (clientX - rect.left) * (W / rect.width);
+  changeLane(cx < W / 2 ? -1 : 1);
+}
+
+function drawRoad() {
+  ctx.fillStyle = '#689f38';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#1b5e20';
+  ctx.fillRect(0, 0, ROAD_X, H);
+  ctx.fillRect(ROAD_X + ROAD_W, 0, W - ROAD_X - ROAD_W, H);
+  ctx.fillStyle = '#555';
+  ctx.fillRect(ROAD_X, 0, ROAD_W, H);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(ROAD_X, 0); ctx.lineTo(ROAD_X, H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ROAD_X + ROAD_W, 0); ctx.lineTo(ROAD_X + ROAD_W, H); ctx.stroke();
+  ctx.setLineDash([34, 34]);
+  ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 7;
+  ctx.lineDashOffset = -(frame * speed * 1.6) % 68;
+  ctx.beginPath();
+  for (let i = 0; i < LANES - 1; i++) {
+    const x = ROAD_X + (i + 1) * LANE_W;
+    ctx.moveTo(x, 0); ctx.lineTo(x, H);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawCar(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(-22, 26, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(22, 26, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#444';
+  ctx.beginPath(); ctx.arc(-22, 26, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(22, 26, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e53935';
+  ctx.beginPath();
+  ctx.moveTo(-34, 16); ctx.lineTo(-34, -30);
+  ctx.arcTo(-34, -46, -18, -46, 14);
+  ctx.lineTo(-18, -46);
+  ctx.arcTo(-5, -46, -5, -30, 8);
+  ctx.lineTo(-5, -30);
+  ctx.lineTo(5, -30);
+  ctx.arcTo(5, -46, 18, -46, 8);
+  ctx.lineTo(18, -46);
+  ctx.arcTo(34, -46, 34, -30, 14);
+  ctx.lineTo(34, 16);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#b71c1c'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#b0bec5';
+  ctx.beginPath();
+  ctx.moveTo(-22, -36); ctx.lineTo(-18, -40);
+  ctx.lineTo(18, -40); ctx.lineTo(22, -36);
+  ctx.lineTo(22, -28); ctx.lineTo(-22, -28);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#8d6e63';
+  ctx.beginPath(); ctx.arc(0, -40, 16, 0, Math.PI * 2); ctx.fill(); // turtle head
+  ctx.fillStyle = '#4e342e';
+  ctx.beginPath(); ctx.arc(-4, -44, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(4, -44, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#8d6e63'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(0, -22, 11, 0, Math.PI * 2); ctx.stroke(); // wheel
+  ctx.restore();
+}
+
+function drawObstacle(o) {
+  ctx.save();
+  ctx.translate(o.x + o.w / 2, o.y + o.h / 2);
+  if (o.type === 'cone') {
+    ctx.fillStyle = '#fdd835';
+    ctx.beginPath(); ctx.moveTo(0, -o.h / 2); ctx.lineTo(-o.w / 2, o.h / 2); ctx.lineTo(o.w / 2, o.h / 2); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fbc02d'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, -o.h / 2 + 8); ctx.lineTo(-14, o.h / 2 - 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -o.h / 2 + 8); ctx.lineTo(14, o.h / 2 - 6); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillRect(-6, o.h / 2 - 14, 12, 6);
+  } else if (o.type === 'rock') {
+    ctx.fillStyle = '#78909c';
+    ctx.beginPath(); ctx.arc(0, 0, o.w / 2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#455a64'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(-8, -8, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(6, 4, 5, 0, Math.PI * 2); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#c62828';
+    ctx.fillRect(-o.w / 2, -o.h / 2, o.w, o.h);
+    ctx.fillStyle = '#ffeb3b';
+    ctx.fillRect(-o.w / 2 + 6, -o.h / 2 + 6, o.w - 12, o.h - 12);
+  }
+  ctx.restore();
+}
+
+function drawCoin(c) {
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  const s = 1 + Math.sin(Date.now() / 400) * 0.05;
+  ctx.scale(s, 1);
+  ctx.fillStyle = '#ffd600';
+  ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fbc02d'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, c.r - 2, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('$', 0, 2);
+  ctx.restore();
+}
+
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  const targetX = laneCenters[playerLane];
+  playerX += (targetX - playerX) * 0.24;
+
+  speed = 3.6 + dist * 0.14;
+  if (speed > 9.5) speed = 9.5;
+
+  dist += speed * 0.0005;
+  const kmMark = Math.floor(dist);
+  if (kmMark > 0 && kmMark > lastKmSound) { lastKmSound = kmMark; play('km'); }
+
+  const spawnGap = Math.max(20, 72 - dist * 7);
+  spawnTimer++;
+  if (spawnTimer >= spawnGap) { spawnTimer = 0; spawnObstacle(); }
+
+  coinTimer++;
+  if (coinTimer >= Math.max(55, 170 - dist * 5)) { coinTimer = 0; spawnCoin(); }
+
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.y += speed;
+    if (o.y > H + 100) obstacles.splice(i, 1);
+  }
+  for (let i = coinList.length - 1; i >= 0; i--) {
+    const c = coinList[i];
+    c.y += speed * 0.92;
+    if (c.y > H + 60) coinList.splice(i, 1);
+    const dx = c.x - playerX, dy = c.y - (playerY - 10);
+    if (dx * dx + dy * dy < (c.r + 30) * (c.r + 30)) {
+      coinList.splice(i, 1);
+      coins++;
+      dist += 0.06;
+      play('coin');
+    }
+  }
+
+  const pw = 44, ph = 74;
+  const px = playerX - pw / 2, py = playerY - ph / 2 + 10;
+  for (const o of obstacles) {
+    if (px < o.x + o.w && px + pw > o.x && py < o.y + o.h && py + ph > o.y) {
+      play('crash');
+      state = 'gameOver';
+      if (dist > highScore) { highScore = dist; localStorage.setItem('turtle_race_high', highScore.toFixed(2)); }
+      return;
+    }
+  }
+}
+
+function draw() {
+  drawRoad();
+  for (const o of obstacles) drawObstacle(o);
+  for (const c of coinList) drawCoin(c);
+  drawCar(playerX, playerY);
+  document.getElementById('dist').textContent = dist.toFixed(2);
+  document.getElementById('coins').textContent = coins;
+}
+
+const uiStart = document.getElementById('uiStart');
+const uiHud = document.getElementById('uiHud');
+const uiOver = document.getElementById('uiGameOver');
+function renderUI() {
+  if (state === 'start') {
+    uiStart.classList.remove('hidden');
+    uiHud.classList.add('hidden');
+    uiOver.classList.add('hidden');
+  } else if (state === 'playing') {
+    uiStart.classList.add('hidden');
+    uiHud.classList.remove('hidden');
+    uiOver.classList.add('hidden');
+  } else {
+    uiStart.classList.add('hidden');
+    uiHud.classList.add('hidden');
+    uiOver.classList.remove('hidden');
+    document.getElementById('finalDist').textContent = dist.toFixed(2);
+    document.getElementById('finalCoins').textContent = coins;
+    document.getElementById('highDist').textContent = highScore.toFixed(2);
+  }
+}
+
+document.getElementById('btnStart').addEventListener('click', () => { state = 'playing'; });
+document.getElementById('btnRestart').addEventListener('click', () => { reset(); state = 'playing'; });
+document.getElementById('btnMute').addEventListener('click', () => {
+  soundOn = !soundOn;
+  document.getElementById('btnMute').textContent = soundOn ? '🔊' : '🔇';
+});
+
+function loop() {
+  update();
+  draw();
+  renderUI();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
